@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: assistec
+      POSTGRES_USER: assistec
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistec -d assistec"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DEBUG: "0"   # produção nunca roda em modo debug, mesmo que falte no .env
+      POSTGRES_DB: assistec
+      POSTGRES_USER: assistec
+      POSTGRES_HOST: db
+      MEDIA_ROOT: /media
+    volumes: [media:/media]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    expose: ["80"]   # só o Caddy acessa; não publique a porta 80 daqui
+    volumes: [media:/media:ro]
+    depends_on: [backend]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMINIO: ${DOMINIO:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+
+volumes:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:

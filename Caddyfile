@@ -1,0 +1,6 @@
+# HTTPS automático (Let's Encrypt). Defina DOMINIO no .env, por exemplo: DOMINIO=sistema.seudominio.com.br
+# Sem DOMINIO, sobe em https://localhost com certificado local, útil para testar.
+{$DOMINIO:localhost} {
+	encode gzip
+	reverse_proxy web:80
+}
