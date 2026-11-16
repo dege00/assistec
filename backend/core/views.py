@@ -19,6 +19,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .estoque import baixar_estoque, baixar_itens, devolver_estoque, devolver_itens
+from .exportacao import exportar_clientes, exportar_pecas, resposta_xlsx
 from .imagens import processar_assinatura
 from .models import Cliente, FotoOS, ItemOS, Lancamento, OrdemServico, Peca, Usuario
 from .permissoes import ordens_visiveis
@@ -355,6 +356,22 @@ class TrocarSenha(APIView):
         request.user.set_password(nova)
         request.user.save(update_fields=["password"])
         return Response({"detail": "Senha alterada com sucesso."})
+
+
+class ExportarClientes(APIView):
+    permission_classes = [SoAdmin]
+
+    def get(self, request):
+        wb = exportar_clientes(request.user.loja)
+        return resposta_xlsx(wb, f"clientes-{timezone.localdate():%Y-%m-%d}.xlsx")
+
+
+class ExportarPecas(APIView):
+    permission_classes = [SoAdmin]
+
+    def get(self, request):
+        wb = exportar_pecas(request.user.loja)
+        return resposta_xlsx(wb, f"pecas-{timezone.localdate():%Y-%m-%d}.xlsx")
 
 
 class Eu(APIView):

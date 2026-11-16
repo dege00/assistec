@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { api, setSession } from '../api'
+import { api, auth, setSession } from '../api'
 import { urlMidia } from '../utils/midia'
 
 const f = reactive({ nome: '', telefone: '', documento: '', endereco: '', termo_garantia: '' })
@@ -9,6 +9,8 @@ const logoAtual = ref(''), arquivoLogo = ref(null)
 
 const senha = reactive({ atual: '', nova: '', confirma: '' })
 const senhaErro = ref(''), senhaMsg = ref(''), trocando = ref(false)
+
+const exportando = ref(''), exportarErro = ref('')
 
 async function carregar() {
   try {
@@ -53,6 +55,21 @@ async function trocarSenha() {
     senha.atual = senha.nova = senha.confirma = ''
   } catch (e) { senhaErro.value = e.message } finally { trocando.value = false }
 }
+
+async function exportar(tipo) {
+  exportarErro.value = ''; exportando.value = tipo
+  try {
+    const blob = await api(`/exportar/${tipo}/`, { blob: true })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${tipo}-${new Date().toISOString().slice(0, 10)}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) { exportarErro.value = e.message } finally { exportando.value = '' }
+}
 </script>
 
 <template>
@@ -87,4 +104,18 @@ async function trocarSenha() {
     <label>Confirmar nova senha<input v-model="senha.confirma" type="password" autocomplete="new-password" required /></label>
     <button class="btn" :disabled="trocando">{{ trocando ? 'Alterando…' : 'Alterar senha' }}</button>
   </form>
+
+  <section v-if="auth.user?.cargo === 'admin'" class="card">
+    <h2>Exportar dados</h2>
+    <p class="mudo">Baixe uma planilha Excel (.xlsx) com os dados da sua assistência.</p>
+    <div v-if="exportarErro" class="erro" role="alert">{{ exportarErro }}</div>
+    <div class="linha2">
+      <button class="btn" type="button" :disabled="!!exportando" @click="exportar('clientes')">
+        {{ exportando === 'clientes' ? 'Gerando…' : 'Baixar clientes (.xlsx)' }}
+      </button>
+      <button class="btn" type="button" :disabled="!!exportando" @click="exportar('pecas')">
+        {{ exportando === 'pecas' ? 'Gerando…' : 'Baixar produtos (.xlsx)' }}
+      </button>
+    </div>
+  </section>
 </template>

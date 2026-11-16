@@ -17,6 +17,8 @@ urlpatterns = [
     path("auth/refresh/", views.Refresh.as_view()),
     path("auth/trocar-senha/", views.TrocarSenha.as_view()),
     path("auth/eu/", views.Eu.as_view()),
+    path("exportar/clientes/", views.ExportarClientes.as_view()),
+    path("exportar/pecas/", views.ExportarPecas.as_view()),
     path("dashboard/", views.dashboard),
     path("publico/os/<str:token>/", views.acompanhar),
     path("", include(router.urls)),

@@ -14,6 +14,7 @@ Stack: **Django + DRF + PostgreSQL** (API) · **Vue 3 + Vite** (PWA instalável 
 - Leitura de código de barras pela câmera (Chrome/Android)
 - Financeiro: entradas, saídas, saldo por período; pagamento da OS lança no caixa; custo e lucro por OS
 - PDF da OS/orçamento (ReportLab)
+- Exportação de clientes e produtos para Excel `.xlsx` pelo administrador (`/api/exportar/clientes/` e `/api/exportar/pecas/`), usando **openpyxl** — biblioteca madura que gera o arquivo direto, sem depender do Microsoft Office nem de conversores externos
 - Painel inicial, PWA (vite-plugin-pwa)
 
 ## Etapa 1 — operação diária

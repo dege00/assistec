@@ -12,6 +12,7 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase, override_settings
 from PIL import Image
+from openpyxl import load_workbook
 from rest_framework.test import APITestCase
 
 from .models import Cliente, FotoOS, ItemOS, Loja, OrdemServico, Peca, Usuario
@@ -685,6 +686,69 @@ class TrocarSenhaTest(BaseTeste):
         self.autenticar(self.admin)
         r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "SenhaForte123", "nova_senha": "123"}, format="json")
         self.assertEqual(r.status_code, 400)
+
+
+class ExportacaoTest(BaseTeste):
+    def setUp(self):
+        super().setUp()
+        self.autenticar(self.admin)
+
+    def _planilha(self, resposta):
+        self.assertEqual(resposta.status_code, 200, getattr(resposta, "data", None))
+        self.assertEqual(resposta["Content-Type"],
+                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return load_workbook(BytesIO(resposta.content)).active
+
+    def test_admin_baixa_clientes(self):
+        Cliente.objects.create(loja=self.loja, nome="Ana Souza", telefone="86999990000",
+                               email="ana@ex.com", documento="12345678900", observacoes="VIP")
+        r = self.client.get("/api/exportar/clientes/")
+        self.assertIn("attachment", r["Content-Disposition"])
+        self.assertIn("clientes-", r["Content-Disposition"])
+        self.assertTrue(r["Content-Disposition"].endswith('.xlsx"'))
+        ws = self._planilha(r)
+        self.assertEqual([c.value for c in ws[1]],
+                         ["Nome", "Telefone", "E-mail", "CPF/CNPJ", "Observações", "Cadastrado em"])
+        self.assertEqual(ws["A2"].value, "Ana Souza")
+        self.assertEqual(ws["B2"].value, "86999990000")
+        self.assertEqual(ws.freeze_panes, "A2")
+
+    def test_pecas_com_moeda_numerica(self):
+        r = self.client.get("/api/exportar/pecas/")
+        self.assertIn("pecas-", r["Content-Disposition"])
+        ws = self._planilha(r)
+        self.assertEqual([c.value for c in ws[1]],
+                         ["Nome", "Código", "Custo", "Preço de venda", "Quantidade", "Estoque mínimo"])
+        self.assertEqual(float(ws["C2"].value), 30.0)
+        self.assertEqual(float(ws["D2"].value), 100.0)
+        self.assertIn("R$", ws["C2"].number_format)
+
+    def test_nao_admin_recebe_403(self):
+        for usuario in (self.atendente, self.tecnico):
+            self.autenticar(usuario)
+            self.assertEqual(self.client.get("/api/exportar/clientes/").status_code, 403)
+            self.assertEqual(self.client.get("/api/exportar/pecas/").status_code, 403)
+
+    def test_loja_b_nao_ve_dados_da_loja_a(self):
+        Cliente.objects.create(loja=self.loja, nome="So da A")
+        Cliente.objects.create(loja=self.outra_loja, nome="So da B")
+        self.autenticar(self.admin_b)
+        ws = self._planilha(self.client.get("/api/exportar/clientes/"))
+        self.assertEqual([c.value for c in ws["A"][1:]], ["So da B"])
+
+    def test_celula_com_formula_sai_como_texto(self):
+        Cliente.objects.create(loja=self.loja, nome="=1+1", telefone="+55 86 9")
+        ws = self._planilha(self.client.get("/api/exportar/clientes/"))
+        self.assertEqual(ws["A2"].value, "'=1+1")
+        self.assertEqual(ws["A2"].data_type, "s")
+        self.assertEqual(ws["B2"].value, "'+55 86 9")
+
+    def test_loja_sem_dados_gera_so_cabecalho(self):
+        self.autenticar(self.admin_b)
+        ws = self._planilha(self.client.get("/api/exportar/clientes/"))
+        self.assertEqual(ws.max_row, 1)
+        ws = self._planilha(self.client.get("/api/exportar/pecas/"))
+        self.assertEqual(ws.max_row, 1)
 
 
 class MigracaoAparelhoTest(TransactionTestCase):
