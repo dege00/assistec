@@ -2,9 +2,12 @@ import base64
 import os
 import shutil
 import tempfile
-from io import BytesIO
+from io import BytesIO, StringIO
 
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase, override_settings
@@ -70,11 +73,10 @@ class BaseTeste(APITestCase):
         return self.client.post("/api/itens/", base, format="json")
 
 
-class FluxoCompleto(APITestCase):
+class FluxoCompleto(BaseTeste):
     def setUp(self):
-        r = self.client.post("/api/auth/registrar/", {"loja": "TecnoPI", "nome": "Ana", "username": "ana", "senha": "segredo1", "telefone": "86999990000"}, format="json")
-        self.assertEqual(r.status_code, 201)
-        self.client.credentials(HTTP_AUTHORIZATION="Bearer " + r.data["access"])
+        super().setUp()
+        self.autenticar(self.admin)
 
     def test_fluxo(self):
         c = self.client.post("/api/clientes/", {"nome": "João Silva", "telefone": "86988887777"}, format="json").data
@@ -100,7 +102,7 @@ class FluxoCompleto(APITestCase):
         pub = self.client.get(f"/api/publico/os/{det['token']}/")
         self.assertEqual(pub.status_code, 200)
         self.assertEqual(len(pub.data["historico"]), 2)
-        tok = self.client.post("/api/auth/login/", {"username": "ana", "password": "segredo1"}, format="json").data["access"]
+        tok = self.client.post("/api/auth/login/", {"username": "admin", "password": "SenhaForte123"}, format="json").data["access"]
         self.client.credentials(HTTP_AUTHORIZATION="Bearer " + tok)
         r = self.client.post(f"/api/os/{os_['id']}/pagar/", {"forma": "pix"}, format="json")
         self.assertEqual(r.data["status"], "pago")
@@ -109,8 +111,7 @@ class FluxoCompleto(APITestCase):
 
     def test_isolamento_entre_lojas(self):
         c = self.client.post("/api/clientes/", {"nome": "Secreto"}, format="json").data
-        r = self.client.post("/api/auth/registrar/", {"loja": "Outra", "nome": "Bob", "username": "bob", "senha": "segredo2"}, format="json")
-        self.client.credentials(HTTP_AUTHORIZATION="Bearer " + r.data["access"])
+        self.autenticar(self.admin_b)
         self.assertEqual(self.client.get(f"/api/clientes/{c['id']}/").status_code, 404)
         self.assertEqual(self.client.get("/api/clientes/").data["count"], 0)
 
@@ -616,6 +617,74 @@ class AparelhoFlexivelTest(BaseTeste):
         for termo in ["SERIE-ABC", "12345678901234"]:
             r = self.client.get(f"/api/os/?search={termo}")
             self.assertEqual(r.data["count"], 1, termo)
+
+
+class AcessoPublicoRemovido(APITestCase):
+    def test_registro_publico_nao_existe(self):
+        r = self.client.post("/api/auth/registrar/", {"loja": "X", "nome": "Y", "username": "z", "senha": "segredo1"}, format="json")
+        self.assertEqual(r.status_code, 404)
+
+
+class LoginThrottleTest(BaseTeste):
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def test_decima_primeira_tentativa_errada_bloqueia(self):
+        for i in range(10):
+            r = self.client.post("/api/auth/login/", {"username": "admin", "password": "errada"}, format="json")
+            self.assertEqual(r.status_code, 401, i)
+        r = self.client.post("/api/auth/login/", {"username": "admin", "password": "errada"}, format="json")
+        self.assertEqual(r.status_code, 429)
+
+
+class CriarLojaCommandTest(APITestCase):
+    def test_cria_loja_e_admin(self):
+        call_command("criar_loja", nome_loja="TecnoPI", usuario="ana", nome="Ana",
+                     telefone="86999990000", senha="SenhaForte123")
+        loja = Loja.objects.get(nome="TecnoPI")
+        usuario = Usuario.objects.get(username="ana")
+        self.assertEqual(usuario.loja, loja)
+        self.assertEqual(usuario.cargo, "admin")
+        self.assertTrue(usuario.check_password("SenhaForte123"))
+
+    def test_recusa_usuario_duplicado(self):
+        loja = Loja.objects.create(nome="Existente")
+        Usuario.objects.create_user("ana", password="SenhaForte123", loja=loja, cargo="admin")
+        with self.assertRaises(CommandError):
+            call_command("criar_loja", nome_loja="Nova", usuario="ana", nome="Ana", senha="SenhaForte123")
+        self.assertFalse(Loja.objects.filter(nome="Nova").exists())
+
+    def test_gera_senha_quando_omitida(self):
+        out = StringIO()
+        call_command("criar_loja", nome_loja="Auto", usuario="auto", nome="Auto", stdout=out)
+        self.assertIn("Senha gerada", out.getvalue())
+        self.assertTrue(Usuario.objects.filter(username="auto").exists())
+
+
+class TrocarSenhaTest(BaseTeste):
+    def test_exige_senha_atual(self):
+        self.autenticar(self.admin)
+        r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "errada", "nova_senha": "NovaSenha123"}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.check_password("SenhaForte123"))
+
+    def test_troca_com_senha_atual_correta(self):
+        self.autenticar(self.admin)
+        r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "SenhaForte123", "nova_senha": "NovaSenha123"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.check_password("NovaSenha123"))
+
+    def test_recusa_nova_senha_fraca(self):
+        self.autenticar(self.admin)
+        r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "SenhaForte123", "nova_senha": "123"}, format="json")
+        self.assertEqual(r.status_code, 400)
 
 
 class MigracaoAparelhoTest(TransactionTestCase):

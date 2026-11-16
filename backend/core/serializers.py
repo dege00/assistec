@@ -2,9 +2,7 @@ import re
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
 from rest_framework import serializers
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from .fields import RelativeImageField
 from .imagens import MAX_IMAGEM_BYTES, erro_imagem, reduzir_imagem, validar_imagem
@@ -83,37 +81,6 @@ class UsuarioSerializer(serializers.ModelSerializer):
             u.set_password(senha)
             u.save(update_fields=["password"])
         return u
-
-
-class RegistroSerializer(serializers.Serializer):
-    loja = serializers.CharField(max_length=120)
-    nome = serializers.CharField(max_length=60)
-    username = serializers.CharField(max_length=150)
-    senha = serializers.CharField(min_length=6, write_only=True)
-    telefone = serializers.CharField(max_length=20, required=False, allow_blank=True)
-
-    def validate_username(self, v):
-        if Usuario.objects.filter(username__iexact=v).exists():
-            raise serializers.ValidationError("Esse usuário já existe.")
-        return v
-
-    def validate_senha(self, v):
-        validate_password(v)
-        return v
-
-    @transaction.atomic
-    def create(self, d):
-        loja = Loja.objects.create(nome=d["loja"], telefone=d.get("telefone", ""))
-        user = Usuario(username=d["username"], first_name=d["nome"], loja=loja, cargo="admin",
-                       telefone=d.get("telefone", ""))
-        user.set_password(d["senha"])
-        user.save()
-        return user
-
-
-def tokens_para(user):
-    r = RefreshToken.for_user(user)
-    return {"access": str(r.access_token), "refresh": str(r)}
 
 
 class ClienteSerializer(serializers.ModelSerializer):

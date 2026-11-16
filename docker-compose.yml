@@ -23,6 +23,7 @@ services:
       POSTGRES_USER: assistec
       POSTGRES_HOST: db
       MEDIA_ROOT: /media
+      NUM_PROXIES: "2"   # Caddy e Nginx na frente da API: usa o IP real do cliente no limite de tentativas
     volumes: [media:/media]
     depends_on:
       db:

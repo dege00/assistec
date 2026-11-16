@@ -94,7 +94,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "core.pagination.Paginacao",
     "PAGE_SIZE": 30,
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"publico": "60/min", "auth": "20/min"},
+    "DEFAULT_THROTTLE_RATES": {"publico": "60/min", "auth": "10/min"},
+    # Quantos proxies confiáveis existem antes do Django (Caddy + Nginx = 2 em produção).
+    # Sem isso o limite por IP vê sempre o IP do container do Nginx e bloqueia todo mundo junto.
+    "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "0")),
 }
 SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(hours=8), "REFRESH_TOKEN_LIFETIME": timedelta(days=14)}
 

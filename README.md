@@ -3,7 +3,7 @@
 Stack: **Django + DRF + PostgreSQL** (API) · **Vue 3 + Vite** (PWA instalável no celular).
 
 ## O que já funciona
-- Cadastro da assistência (multiempresa: cada loja só vê os próprios dados) e login JWT
+- Multiempresa (cada loja só vê os próprios dados) e login JWT com limite de tentativas por IP; o acesso do cliente é criado pelo comando `criar_loja`
 - Cargos: administrador, atendente, técnico (financeiro, custo e lucro só para admin)
 - Clientes
 - Ordem de serviço: checklist de entrada, fotos pela câmera, assinatura na tela, laudo, status e histórico
@@ -45,7 +45,7 @@ npm run dev     # http://<ip-do-pc>:5173 (proxy para a API em :8000)
 ```
 O alvo padrão do proxy de desenvolvimento fica em `frontend/.env.example` (`API_PROXY`); para trocar, crie `frontend/.env.development` com o novo valor.
 Se `FRONTEND_URL` não for definida, o link do WhatsApp usa o endereço pelo qual o sistema foi acessado. No celular do cliente, `localhost` não abre: acesse pelo IP do PC (ex.: `http://192.168.1.110:5173`) ou defina `FRONTEND_URL`.
-Abra o app, clique em **Cadastrar minha assistência** e comece a usar. Testes: `python manage.py test core`.
+Abra o app e entre com o usuário e senha do administrador (veja "Como criar o acesso de um cliente"). Testes: `python manage.py test core`.
 
 ## Produção (VPS)
 ```bash
@@ -57,7 +57,38 @@ automaticamente para o `DOMINIO` do `.env` (o DNS precisa apontar para a VPS; c�
 Sem `DOMINIO`, sobe em `https://localhost` com certificado local, só para testar.
 O container da API roda sempre com `DEBUG=0`, mesmo que o `.env` esqueça a variável; com isso o boot falha se a
 `SECRET_KEY` for a padrão ou tiver menos de 32 caracteres.
+O compose define `NUM_PROXIES=2` na API: como o tráfego passa pelo Caddy e pelo Nginx antes do Django, esse valor
+faz o limite de tentativas de login usar o **IP real do cliente** em vez do IP do container do Nginx (sem ele, um
+único atacante bloquearia o login de todos). Em desenvolvimento o padrão é `0`, pois não há proxy na frente.
 Faça backup diário do volume `pgdata` (`pg_dump`) e do volume `media`.
+
+## Como criar o acesso de um cliente
+Não existe cadastro público: quem cria a loja e o usuário é você, pelo backend. Use o comando `criar_loja`
+(rodando no servidor ou dentro do container):
+
+```bash
+# na VPS, via Docker (recomendado em produção)
+docker compose exec backend python manage.py criar_loja \
+  --nome-loja "TecnoPI Assistência" \
+  --usuario ana --nome "Ana" --telefone "86999990000"
+
+# ou em desenvolvimento, no venv do backend
+cd backend
+python manage.py criar_loja --nome-loja "TecnoPI" --usuario ana --nome "Ana"
+```
+
+Se `--senha` for omitida, o comando gera uma senha forte e a mostra **uma única vez** (anote e entregue ao
+cliente). A senha é validada pelos validadores do Django e o comando recusa um usuário que já exista. A loja e o
+administrador são criados na mesma transação.
+
+Para redefinir a senha de alguém depois:
+
+```bash
+docker compose exec backend python manage.py resetar_senha --usuario ana
+```
+
+Entregue usuário e senha ao cliente; no primeiro acesso ele pode trocar a senha em **Ajustes → Minha senha**.
+Também é possível criar lojas e usuários direto pelo `/admin` (com filtro por loja).
 
 ## Revisão de segurança e qualidade
 Corrigido nesta revisão:
@@ -71,7 +102,8 @@ Corrigido nesta revisão:
 - Testes: `core/test_seguranca.py` cobre essas regras; a suíte roda em poucos segundos.
 
 Pendente / decisões conscientes:
-- Cadastro público (`/api/auth/registrar/`) e login sem limite de tentativas: mantidos como estavam, a decidir.
+- Cadastro público removido: a loja e o usuário do cliente são criados por você com `criar_loja` (ou pelo `/admin`).
+- Login limitado a 10 tentativas por minuto por IP (`throttle_scope = "auth"`); a mensagem de erro continua genérica.
 - `/media/` continua público por URL com nome UUID (veja "Decisões").
 - Tokens JWT ficam no `localStorage` (access 8 h, refresh 14 dias, sem rotação).
 - Em desenvolvimento ainda há fallback para SQLite; o app `core` ainda não foi dividido por domínio.

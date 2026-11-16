@@ -39,7 +39,9 @@ export async function api(path, { method = 'GET', body, form, blob } = {}, retry
   const data = await r.json().catch(() => null)
   if (!r.ok) {
     const msg = data?.detail || (data && Object.entries(data).map(([k, v]) => `${k}: ${[].concat(v).join(' ')}`).join(' | ')) || 'Erro inesperado'
-    throw new Error(msg)
+    const erro = new Error(msg)
+    erro.status = r.status
+    throw erro
   }
   return data
 }

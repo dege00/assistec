@@ -2,6 +2,8 @@ from decimal import Decimal
 from urllib.parse import quote
 
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, F, Sum
 from django.http import HttpResponse
@@ -14,6 +16,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .estoque import baixar_estoque, baixar_itens, devolver_estoque, devolver_itens
 from .imagens import processar_assinatura
@@ -21,8 +24,7 @@ from .models import Cliente, FotoOS, ItemOS, Lancamento, OrdemServico, Peca, Usu
 from .permissoes import ordens_visiveis
 from .pdf import gerar_pdf_os
 from .serializers import (ClienteSerializer, FotoSerializer, ItemOSSerializer, LancamentoSerializer, LojaSerializer,
-                          OSListaSerializer, OSSerializer, PecaSerializer, RegistroSerializer, UsuarioSerializer,
-                          tokens_para)
+                          OSListaSerializer, OSSerializer, PecaSerializer, UsuarioSerializer)
 
 FORMAS_PAGAMENTO = {"dinheiro", "pix", "debito", "credito", "outro"}
 
@@ -329,15 +331,30 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         inst.delete()
 
 
-@api_view(["POST"])
-@permission_classes([permissions.AllowAny])
-@throttle_classes([ScopedRateThrottle])
-def registrar(request):
-    s = RegistroSerializer(data=request.data)
-    s.is_valid(raise_exception=True)
-    user = s.save()
-    return Response({**tokens_para(user), "usuario": UsuarioSerializer(user).data}, status=201)
-registrar.cls.throttle_scope = "auth"
+class Login(TokenObtainPairView):
+    """Login com limite de tentativas por IP (o cadastro público não existe mais)."""
+    throttle_scope = "auth"
+
+
+class Refresh(TokenRefreshView):
+    throttle_scope = "auth"
+
+
+class TrocarSenha(APIView):
+    """Troca a própria senha exigindo a senha atual (usada no primeiro acesso)."""
+
+    def post(self, request):
+        atual = request.data.get("senha_atual", "")
+        nova = request.data.get("nova_senha", "")
+        if not request.user.check_password(atual):
+            return Response({"detail": "Senha atual incorreta."}, status=400)
+        try:
+            validate_password(nova, request.user)
+        except DjangoValidationError as e:
+            return Response({"detail": " ".join(e.messages)}, status=400)
+        request.user.set_password(nova)
+        request.user.save(update_fields=["password"])
+        return Response({"detail": "Senha alterada com sucesso."})
 
 
 class Eu(APIView):
