@@ -62,6 +62,20 @@ O compose define `NUM_PROXIES=2` na API: como o tráfego passa pelo Caddy e pelo
 faz o limite de tentativas de login usar o **IP real do cliente** em vez do IP do container do Nginx (sem ele, um
 único atacante bloquearia o login de todos). Em desenvolvimento o padrão é `0`, pois não há proxy na frente.
 Faça backup diário do volume `pgdata` (`pg_dump`) e do volume `media`.
+Os logs dos containers são limitados (10 MB por arquivo, no máximo 3) para não encher o disco.
+
+O passo a passo completo de uma VPS Ubuntu (usuário não-root, SSH por chave, `ufw`, Docker, DNS, `.env`,
+backup, monitoramento e teste de restauração) está em **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+## Backup, restauração e monitoramento
+Scripts em `scripts/` (rode na raiz do projeto, onde está o `docker-compose.yml`):
+- `backup.sh`: `pg_dump` comprimido + `tar.gz` da mídia em `/var/backups/assistec/`, retenção de 14 dias.
+- `enviar_backup.sh`: envia os arquivos novos para fora da VPS com `rclone` (ex.: Backblaze B2).
+- `restaurar.sh <banco> <media>`: restaura em um banco/volume de **teste**; com `--producao` (e confirmação)
+  sobrescreve produção.
+
+Endpoint público `GET /api/saude/` (só checa o banco e responde `{"status": "ok"}`) para o UptimeRobot.
+O agendamento no cron e a criação do `rclone.conf` estão em [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Como criar o acesso de um cliente
 Não existe cadastro público: quem cria a loja e o usuário é você, pelo backend. Use o comando `criar_loja`

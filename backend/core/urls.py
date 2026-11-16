@@ -20,6 +20,7 @@ urlpatterns = [
     path("exportar/clientes/", views.ExportarClientes.as_view()),
     path("exportar/pecas/", views.ExportarPecas.as_view()),
     path("dashboard/", views.dashboard),
+    path("saude/", views.saude),
     path("publico/os/<str:token>/", views.acompanhar),
     path("", include(router.urls)),
 ]

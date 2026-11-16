@@ -751,6 +751,13 @@ class ExportacaoTest(BaseTeste):
         self.assertEqual(ws.max_row, 1)
 
 
+class SaudeTest(APITestCase):
+    def test_saude_publica_responde_ok(self):
+        r = self.client.get("/api/saude/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, {"status": "ok"})
+
+
 class MigracaoAparelhoTest(TransactionTestCase):
     migrate_from = [("core", "0003_fotoos_tipo_fotoos_visivel_cliente")]
     migrate_to = [("core", "0004_aparelho_flexivel")]

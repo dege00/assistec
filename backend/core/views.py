@@ -4,7 +4,7 @@ from urllib.parse import quote
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count, F, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -407,6 +407,19 @@ def dashboard(request):
         receber = sum((o.total - o.pago for o in finalizadas), Decimal("0"))
         out.update(entradas_mes=e, saidas_mes=saidas, saldo_mes=e - saidas, a_receber=receber)
     return Response(out)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def saude(request):
+    """Checagem de saúde para o UptimeRobot: confirma a conexão com o banco sem expor dados."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except Exception:
+        return Response({"status": "erro"}, status=503)
+    return Response({"status": "ok"})
 
 
 @api_view(["GET"])
