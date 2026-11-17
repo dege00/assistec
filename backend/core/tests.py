@@ -2,6 +2,7 @@ import base64
 import os
 import shutil
 import tempfile
+import zipfile
 from io import BytesIO, StringIO
 
 from django.core.cache import cache
@@ -799,11 +800,19 @@ class ExportacaoTest(BaseTeste):
         self.assertEqual([c.value for c in ws["A"][1:]], ["So da B"])
 
     def test_celula_com_formula_sai_como_texto(self):
-        Cliente.objects.create(loja=self.loja, nome="=1+1", telefone="+55 86 9")
+        Cliente.objects.create(loja=self.loja, nome="=1+1", telefone="+55 86 99999-0000")
         ws = self._planilha(self.client.get("/api/exportar/clientes/"))
-        self.assertEqual(ws["A2"].value, "'=1+1")
-        self.assertEqual(ws["A2"].data_type, "s")
-        self.assertEqual(ws["B2"].value, "'+55 86 9")
+        self.assertEqual(ws["A2"].value, "=1+1")           # sem apóstrofo
+        self.assertEqual(ws["A2"].data_type, "s")          # string de verdade
+        self.assertEqual(ws["B2"].value, "+55 86 99999-0000")
+
+    def test_planilha_nao_tem_formula_no_xml(self):
+        Cliente.objects.create(loja=self.loja, nome="=1+1", observacoes="@SUM(A1)")
+        r = self.client.get("/api/exportar/clientes/")
+        self.assertEqual(r.status_code, 200)
+        with zipfile.ZipFile(BytesIO(r.content)) as z:
+            xml = z.read("xl/worksheets/sheet1.xml").decode()
+        self.assertNotIn("<f>", xml)
 
     def test_loja_sem_dados_gera_so_cabecalho(self):
         self.autenticar(self.admin_b)

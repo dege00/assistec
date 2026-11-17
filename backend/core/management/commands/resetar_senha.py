@@ -16,7 +16,7 @@ class Command(BaseCommand):
         try:
             usuario = Usuario.objects.get(username__iexact=options["usuario"])
         except Usuario.DoesNotExist:
-            raise CommandError(f'O usuário "{options["usuario"]}" não existe.')
+            raise CommandError(f'O usuário "{options["usuario"]}" não existe.') from None
 
         gerada = options["senha"] is None
         senha = options["senha"] or gerar_senha()

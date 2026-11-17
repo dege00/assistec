@@ -9,25 +9,24 @@ from openpyxl.utils import get_column_letter
 from .models import Cliente, Peca
 
 FORMATO_MOEDA = '"R$" #,##0.00'
-PREFIXOS_PERIGOSOS = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
 def texto_seguro(valor):
-    """Grava texto literal, evitando injeção de fórmula ao abrir no Excel.
+    """Converte o valor para texto (a proteção contra fórmula é feita em _celula).
 
-    O Excel interpreta células iniciadas por = + - @ (ou tab/quebra de linha) como
-    fórmula/comando; o apóstrofo força o conteúdo a ser tratado como texto.
+    O Excel trata células iniciadas por = + - @ como fórmula/comando ao abrir. Em
+    vez de prefixar com apóstrofo (que ficaria visível no arquivo), forçamos o tipo
+    da célula para string em `_celula`, o que grava o texto literal de verdade.
     """
     if valor is None:
         return ""
-    texto = str(valor)
-    if texto[:1] in PREFIXOS_PERIGOSOS:
-        return "'" + texto
-    return texto
+    return str(valor)
 
 
 def _celula(ws, valor, negrito=False, formato=None):
     celula = WriteOnlyCell(ws, value=valor)
+    if isinstance(valor, str):
+        celula.data_type = "s"  # texto de verdade: nada vira fórmula no Excel
     if negrito:
         celula.font = Font(bold=True)
     if formato:
