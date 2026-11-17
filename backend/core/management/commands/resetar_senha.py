@@ -2,6 +2,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from core.models import Usuario
 from core.senhas import erros_de_senha, gerar_senha
+from core.sessoes import invalidar_tokens
 
 
 class Command(BaseCommand):
@@ -25,6 +26,7 @@ class Command(BaseCommand):
 
         usuario.set_password(senha)
         usuario.save(update_fields=["password"])
+        invalidar_tokens(usuario)
         self.stdout.write(self.style.SUCCESS(f'Senha de "{usuario.username}" redefinida.'))
         if gerada:
             self.stdout.write(self.style.WARNING(

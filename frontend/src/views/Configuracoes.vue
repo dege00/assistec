@@ -50,7 +50,8 @@ async function trocarSenha() {
   if (senha.nova !== senha.confirma) { senhaErro.value = 'A confirmação não confere com a nova senha.'; return }
   trocando.value = true
   try {
-    await api('/auth/trocar-senha/', { method: 'POST', body: { senha_atual: senha.atual, nova_senha: senha.nova } })
+    const t = await api('/auth/trocar-senha/', { method: 'POST', body: { senha_atual: senha.atual, nova_senha: senha.nova } })
+    setSession({ access: t.access, refresh: t.refresh })  // mantém esta sessão ativa com o par novo
     senhaMsg.value = 'Senha alterada com sucesso.'
     senha.atual = senha.nova = senha.confirma = ''
   } catch (e) { senhaErro.value = e.message } finally { trocando.value = false }

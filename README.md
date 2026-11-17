@@ -118,9 +118,14 @@ Corrigido nesta revisão:
 
 Pendente / decisões conscientes:
 - Cadastro público removido: a loja e o usuário do cliente são criados por você com `criar_loja` (ou pelo `/admin`).
-- Login limitado a 10 tentativas por minuto por IP (`throttle_scope = "auth"`); a mensagem de erro continua genérica.
+- Login limitado a 10 tentativas por minuto por IP (`throttle_scope = "auth"`); a renovação de token tem limite próprio
+  e mais folgado (`refresh`, 60/min) e a troca de senha tem o seu (`senha`, 5/min). A mensagem de erro continua genérica.
 - `/media/` continua público por URL com nome UUID (veja "Decisões").
-- Tokens JWT ficam no `localStorage` (access 8 h, refresh 14 dias, sem rotação).
+- Tokens JWT ficam no `localStorage` (access 60 min, refresh 14 dias, sem rotação de refresh). O access curto reduz o dano
+  de um token vazado; a renovação é feita pelo refresh token. Trocar a própria senha, redefinir por comando
+  (`resetar_senha`) ou **desativar** um usuário invalida na hora todos os refresh tokens já emitidos (blacklist), então as
+  outras sessões caem no próximo refresh; a sessão atual recebe um par novo e continua logada. Limpe os tokens expirados de
+  tempos em tempos com `docker compose exec backend python manage.py flushexpiredtokens` (veja o cron no `docs/DEPLOY.md`).
 - Em desenvolvimento ainda há fallback para SQLite; o app `core` ainda não foi dividido por domínio.
 
 ## Decisões (Etapa 1)

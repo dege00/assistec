@@ -16,6 +16,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .estoque import baixar_estoque, baixar_itens, devolver_estoque, devolver_itens
@@ -26,6 +27,7 @@ from .permissoes import ordens_visiveis
 from .pdf import gerar_pdf_os
 from .serializers import (ClienteSerializer, FotoSerializer, ItemOSSerializer, LancamentoSerializer, LojaSerializer,
                           OSListaSerializer, OSSerializer, PecaSerializer, UsuarioSerializer)
+from .sessoes import invalidar_tokens
 
 FORMAS_PAGAMENTO = {"dinheiro", "pix", "debito", "credito", "outro"}
 
@@ -326,6 +328,13 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(loja=self.request.user.loja)
 
+    def perform_update(self, serializer):
+        # Ao desativar um usuário, encerra as sessões dele (refresh tokens na blacklist).
+        ativo_antes = serializer.instance.is_active
+        usuario = serializer.save()
+        if ativo_antes and not usuario.is_active:
+            invalidar_tokens(usuario)
+
     def perform_destroy(self, inst):
         if inst.pk == self.request.user.pk:
             raise ValidationError({"detail": "Você não pode excluir o próprio usuário."})
@@ -338,11 +347,14 @@ class Login(TokenObtainPairView):
 
 
 class Refresh(TokenRefreshView):
-    throttle_scope = "auth"
+    """Renovação de token: limite próprio, mais folgado que o do login."""
+    throttle_scope = "refresh"
 
 
 class TrocarSenha(APIView):
     """Troca a própria senha exigindo a senha atual (usada no primeiro acesso)."""
+
+    throttle_scope = "senha"
 
     def post(self, request):
         atual = request.data.get("senha_atual", "")
@@ -355,7 +367,14 @@ class TrocarSenha(APIView):
             return Response({"detail": " ".join(e.messages)}, status=400)
         request.user.set_password(nova)
         request.user.save(update_fields=["password"])
-        return Response({"detail": "Senha alterada com sucesso."})
+        # Encerra as sessões antigas e devolve um par novo para a sessão atual seguir logada.
+        invalidar_tokens(request.user)
+        novo_refresh = RefreshToken.for_user(request.user)
+        return Response({
+            "detail": "Senha alterada com sucesso.",
+            "access": str(novo_refresh.access_token),
+            "refresh": str(novo_refresh),
+        })
 
 
 class ExportarClientes(APIView):

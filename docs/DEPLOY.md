@@ -200,6 +200,9 @@ Adicione (backup diário às 03:00 e envio logo depois; falha vira linha no log)
 
 # A cada 5 minutos checa a saúde e registra se estiver fora do ar
 */5 * * * * curl -fsS https://SEU_DOMINIO/api/saude/ >/dev/null || echo "$(date -Is) saude: fora do ar" >> /var/log/assistec-saude.log
+
+# Uma vez por dia limpa os refresh tokens expirados da blacklist (evita crescer sem fim)
+30 4 * * * cd /opt/assistec && docker compose exec -T backend python manage.py flushexpiredtokens >> /var/log/assistec-backup.log 2>&1
 ```
 
 Garanta que `deploy` possa escrever nos logs:

@@ -642,6 +642,14 @@ class LoginThrottleTest(BaseTeste):
         r = self.client.post("/api/auth/login/", {"username": "admin", "password": "errada"}, format="json")
         self.assertEqual(r.status_code, 429)
 
+    def test_refresh_tem_limite_proprio_mais_folgado(self):
+        login = self.client.post("/api/auth/login/", {"username": "admin", "password": "SenhaForte123"}, format="json")
+        self.assertEqual(login.status_code, 200, login.data)
+        refresh = login.data["refresh"]
+        for i in range(12):  # o login usa "auth" (10/min); o refresh usa "refresh" (60/min)
+            r = self.client.post("/api/auth/refresh/", {"refresh": refresh}, format="json")
+            self.assertEqual(r.status_code, 200, i)
+
 
 class CriarLojaCommandTest(APITestCase):
     def test_cria_loja_e_admin(self):
@@ -668,6 +676,14 @@ class CriarLojaCommandTest(APITestCase):
 
 
 class TrocarSenhaTest(BaseTeste):
+    def setUp(self):
+        super().setUp()
+        cache.clear()  # o limite de "senha" (5/min) é por IP e persiste entre testes
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
     def test_exige_senha_atual(self):
         self.autenticar(self.admin)
         r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "errada", "nova_senha": "NovaSenha123"}, format="json")
@@ -686,6 +702,52 @@ class TrocarSenhaTest(BaseTeste):
         self.autenticar(self.admin)
         r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "SenhaForte123", "nova_senha": "123"}, format="json")
         self.assertEqual(r.status_code, 400)
+
+    def test_limite_de_tentativas_de_troca(self):
+        self.autenticar(self.admin)
+        for i in range(5):
+            r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "errada", "nova_senha": "NovaSenha123"}, format="json")
+            self.assertEqual(r.status_code, 400, i)
+        r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "errada", "nova_senha": "NovaSenha123"}, format="json")
+        self.assertEqual(r.status_code, 429)
+
+    def test_troca_devolve_novo_par_e_invalida_refresh_antigo(self):
+        login = self.client.post("/api/auth/login/", {"username": "admin", "password": "SenhaForte123"}, format="json").data
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer " + login["access"])
+        r = self.client.post("/api/auth/trocar-senha/", {"senha_atual": "SenhaForte123", "nova_senha": "NovaSenha123"}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertIn("access", r.data)
+        self.assertIn("refresh", r.data)
+        self.client.credentials()
+        antigo = self.client.post("/api/auth/refresh/", {"refresh": login["refresh"]}, format="json")
+        self.assertEqual(antigo.status_code, 401)
+        novo = self.client.post("/api/auth/refresh/", {"refresh": r.data["refresh"]}, format="json")
+        self.assertEqual(novo.status_code, 200, novo.data)
+
+
+class InvalidarSessoesTest(BaseTeste):
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+
+    def tearDown(self):
+        cache.clear()
+        super().tearDown()
+
+    def test_resetar_senha_invalida_refresh_antigo(self):
+        login = self.client.post("/api/auth/login/", {"username": "admin", "password": "SenhaForte123"}, format="json").data
+        call_command("resetar_senha", usuario="admin", senha="NovaSenha123")
+        r = self.client.post("/api/auth/refresh/", {"refresh": login["refresh"]}, format="json")
+        self.assertEqual(r.status_code, 401)
+
+    def test_usuario_desativado_perde_refresh(self):
+        login = self.client.post("/api/auth/login/", {"username": "atendente", "password": "SenhaForte123"}, format="json").data
+        self.autenticar(self.admin)
+        r = self.client.patch(f"/api/usuarios/{self.atendente.id}/", {"is_active": False}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.client.credentials()
+        rr = self.client.post("/api/auth/refresh/", {"refresh": login["refresh"]}, format="json")
+        self.assertEqual(rr.status_code, 401)
 
 
 class ExportacaoTest(BaseTeste):

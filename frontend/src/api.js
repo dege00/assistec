@@ -18,11 +18,24 @@ export function logout() {
 }
 
 async function renovar() {
-  if (!auth.refresh) return false
-  const r = await fetch('/api/auth/refresh/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh: auth.refresh }) })
-  if (!r.ok) return false
+  if (!auth.refresh) return { ok: false, status: 401 }
+  let r
+  try {
+    r = await fetch('/api/auth/refresh/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh: auth.refresh }) })
+  } catch (e) {
+    return { ok: false, status: 0, erro: e }  // erro de rede: não é culpa da sessão
+  }
+  if (!r.ok) return { ok: false, status: r.status }
   setSession(await r.json())
-  return true
+  return { ok: true }
+}
+
+// Renovação única: chamadas simultâneas compartilham a mesma tentativa, e a
+// variável é limpa quando ela termina (evita disparar vários refresh iguais).
+let renovando = null
+function renovarUnico() {
+  if (!renovando) renovando = renovar().finally(() => { renovando = null })
+  return renovando
 }
 
 export async function api(path, { method = 'GET', body, form, blob } = {}, retry = true) {
@@ -30,9 +43,19 @@ export async function api(path, { method = 'GET', body, form, blob } = {}, retry
   if (auth.access) headers.Authorization = `Bearer ${auth.access}`
   if (body) headers['Content-Type'] = 'application/json'
   const r = await fetch('/api' + path, { method, headers, body: form || (body ? JSON.stringify(body) : undefined) })
-  if (r.status === 401 && retry && auth.refresh) {
-    if (await renovar()) return api(path, { method, body, form, blob }, false)
-    logout()
+  // Não tenta renovar nas próprias rotas de autenticação (evita laço).
+  const rotaAuth = path === '/auth/login/' || path === '/auth/refresh/'
+  if (r.status === 401 && retry && auth.refresh && !rotaAuth) {
+    const res = await renovarUnico()
+    if (res.ok) return api(path, { method, body, form, blob }, false)
+    if (res.status === 401 || res.status === 400) {
+      logout()  // refresh inválido/expirado: a sessão acabou de verdade
+    } else {
+      // 429, 5xx ou erro de rede: não desloga; só avisa quem chamou.
+      const erro = new Error('Não foi possível renovar a sessão. Tente novamente.')
+      erro.status = res.status
+      throw erro
+    }
   }
   if (r.status === 204) return null
   if (!r.ok) {

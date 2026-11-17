@@ -34,7 +34,7 @@ SECURE_HSTS_PRELOAD = not DEBUG
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
     "django.contrib.sessions", "django.contrib.messages", "django.contrib.staticfiles",
-    "rest_framework", "django_filters", "core",
+    "rest_framework", "rest_framework_simplejwt.token_blacklist", "django_filters", "core",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -94,12 +94,25 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "core.pagination.Paginacao",
     "PAGE_SIZE": 30,
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"publico": "60/min", "auth": "10/min"},
+    "DEFAULT_THROTTLE_RATES": {
+        "publico": "60/min",   # endpoints públicos (ex.: /api/saude/)
+        "auth": "10/min",      # login (protege contra força bruta de senha)
+        "refresh": "60/min",   # renovação de token (não pode ser tão apertada quanto o login)
+        "senha": "5/min",      # troca de senha
+    },
     # Quantos proxies confiáveis existem antes do Django (Caddy + Nginx = 2 em produção).
     # Sem isso o limite por IP vê sempre o IP do container do Nginx e bloqueia todo mundo junto.
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "0")),
 }
-SIMPLE_JWT = {"ACCESS_TOKEN_LIFETIME": timedelta(hours=8), "REFRESH_TOKEN_LIFETIME": timedelta(days=14)}
+# Access token curto (60 min) limita o dano de um token vazado. A renovação é
+# feita pelo refresh token (14 dias). Sem ROTATE_REFRESH_TOKENS de propósito: a
+# rotação quebraria a renovação única no frontend. Tokens revogados entram na
+# blacklist (rest_framework_simplejwt.token_blacklist); limpe os expirados com
+# "manage.py flushexpiredtokens" (veja o README).
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
+}
 
 if "test" in sys.argv:  # hash de senha rápido só nos testes (a suíte fica bem mais veloz)
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
