@@ -203,11 +203,16 @@ password = <senha-obfuscada-do-crypt>
 password2 = <salt-obfuscado-do-crypt>
 ```
 
-Proteja o arquivo (`sudo chmod 600 /etc/rclone/rclone.conf`) e envie:
+Ajuste o dono e as permissões do arquivo e envie:
 
 ```bash
+sudo chown deploy:deploy /etc/rclone/rclone.conf && sudo chmod 600 /etc/rclone/rclone.conf
 RCLONE_DESTINO="cript:assistec" ./scripts/enviar_backup.sh
 ```
+
+> O `rclone config` roda com `sudo` e cria o arquivo como `root`. Sem o `chown`
+> acima, o cron (que roda como `deploy`) não consegue ler a configuração e o
+> envio falha; o `chmod 600` mantém os segredos do crypt acessíveis só ao `deploy`.
 
 No bucket, os arquivos aparecem com nomes e conteúdo cifrados (não dá para
 reconhecer `banco-*.sql.gz` de fora) — é o esperado.
@@ -261,7 +266,7 @@ Garanta que `deploy` possa escrever nos logs:
 
 ```bash
 sudo touch /var/log/assistec-backup.log /var/log/assistec-saude.log
-sudo chown deploy:deploy /var/log/assistec-*.log
+sudo chown deploy:deploy /var/log/assistec-*.log && sudo chmod 600 /var/log/assistec-*.log
 ```
 
 ## 10. Monitoramento (UptimeRobot)

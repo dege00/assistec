@@ -60,6 +60,7 @@ if [ "$PRODUCAO" = "1" ]; then
   ./scripts/backup.sh
   echo "[restore] parando o backend para liberar o banco"
   docker compose stop backend
+  trap 'echo "A restauração falhou. O backend continua PARADO. O estado anterior foi salvo pelo backup.sh feito antes (veja o diretório de backup). Corrija o problema e rode de novo, ou religue com: docker compose start backend" >&2' ERR
 else
   ALVO_BANCO="$BANCO_TESTE"
   ALVO_MEDIA="$VOLUME_MEDIA_TESTE"
@@ -71,7 +72,7 @@ docker compose exec -T db psql -U "$POSTGRES_USER" -d postgres -q -c \
   "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$ALVO_BANCO' AND pid<>pg_backend_pid();"
 docker compose exec -T db dropdb -U "$POSTGRES_USER" --if-exists "$ALVO_BANCO"
 docker compose exec -T db createdb -U "$POSTGRES_USER" "$ALVO_BANCO"
-gunzip -c "$ARQUIVO_BANCO" | docker compose exec -T db psql -U "$POSTGRES_USER" -d "$ALVO_BANCO" -q
+gunzip -c "$ARQUIVO_BANCO" | docker compose exec -T db psql -U "$POSTGRES_USER" -d "$ALVO_BANCO" -q -v ON_ERROR_STOP=1 --single-transaction
 
 echo "[restore] $(date -Is) restaurando mídia no volume '$ALVO_MEDIA'"
 DIR_MEDIA="$(cd "$(dirname "$ARQUIVO_MEDIA")" && pwd)"

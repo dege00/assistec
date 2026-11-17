@@ -43,7 +43,6 @@ chmod 700 "$DIRETORIO_BACKUP"   # pasta de backup restrita ao dono
 echo "[backup] $(date -Is) dump do banco -> $BANCO"
 docker compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > "$BANCO_TMP"
 gzip -t "$BANCO_TMP"          # falha se o dump saiu corrompido/incompleto
-mv "$BANCO_TMP" "$BANCO"      # só publica o arquivo depois de validar
 
 echo "[backup] $(date -Is) mídia (volume $VOLUME_MEDIA) -> $MEDIA"
 if ! docker volume inspect "$VOLUME_MEDIA" >/dev/null 2>&1; then
@@ -59,6 +58,9 @@ docker run --rm \
   "$IMAGEM_HELPER" \
   tar czf "/backup/media-$DATA.tar.gz.tmp" -C /media .
 tar tzf "$MEDIA_TMP" >/dev/null  # valida o arquivo gerado
+
+echo "[backup] $(date -Is) publicando o par banco + mídia"
+mv "$BANCO_TMP" "$BANCO"
 mv "$MEDIA_TMP" "$MEDIA"
 
 echo "[backup] $(date -Is) removendo arquivos com mais de $DIAS_RETENCAO dias"
