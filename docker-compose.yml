@@ -1,3 +1,5 @@
+name: assistec   # nome fixo do projeto: garante volumes como "assistec_media" (usados pelo backup)
+
 x-logging: &logging
   driver: json-file
   options:

@@ -42,6 +42,11 @@ fi
 [ -f "$ARQUIVO_BANCO" ] || { echo "erro: $ARQUIVO_BANCO não existe" >&2; exit 1; }
 [ -f "$ARQUIVO_MEDIA" ] || { echo "erro: $ARQUIVO_MEDIA não existe" >&2; exit 1; }
 
+# Valida os arquivos ANTES de qualquer ação destrutiva (parar backend, dropdb, limpar volume).
+echo "[restore] validando os arquivos de backup"
+gzip -t "$ARQUIVO_BANCO" || { echo "erro: $ARQUIVO_BANCO não é um gzip válido (arquivo corrompido/incompleto)" >&2; exit 1; }
+tar tzf "$ARQUIVO_MEDIA" >/dev/null || { echo "erro: $ARQUIVO_MEDIA não é um tar.gz válido (arquivo corrompido/incompleto)" >&2; exit 1; }
+
 cd "$(dirname "$0")/.."
 
 if [ "$PRODUCAO" = "1" ]; then
@@ -51,6 +56,8 @@ if [ "$PRODUCAO" = "1" ]; then
   echo "O banco '$ALVO_BANCO' e o volume '$ALVO_MEDIA' serão SOBRESCRITOS."
   read -r -p "Digite exatamente CONFIRMAR para continuar: " resposta
   [ "$resposta" = "CONFIRMAR" ] || { echo "cancelado pelo usuário."; exit 1; }
+  echo "[restore] guardando o estado atual antes de sobrescrever (backup.sh)"
+  ./scripts/backup.sh
   echo "[restore] parando o backend para liberar o banco"
   docker compose stop backend
 else

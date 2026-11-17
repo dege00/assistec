@@ -159,9 +159,17 @@ O script faz `pg_dump` comprimido do banco e um `tar.gz` do volume de mídia,
 com data no nome, e apaga o que tiver mais de 14 dias. Se qualquer etapa falhar,
 ele termina com erro (e o cron registra a falha).
 
-### 9.2 Enviar para fora da VPS (rclone)
+### 9.2 Enviar para fora da VPS (rclone, com criptografia)
 
-Instale o rclone e crie a configuração do remoto:
+Os backups **nunca** devem sair da VPS em claro: se o bucket vazar, qualquer um
+lê os dados dos clientes. Por isso o envio é feito por um remoto **crypt** do
+rclone sobre o bucket.
+
+> **Guarde as senhas do crypt em um gerenciador de senhas fora da VPS.** Sem a
+> senha e o salt do crypt, os arquivos no bucket são **ilegíveis para sempre** —
+> nem você consegue restaurar. Se perder essas duas senhas, perde os backups.
+
+Instale o rclone e crie primeiro o remoto do bucket, depois o remoto crypt:
 
 ```bash
 sudo apt install -y rclone
@@ -169,22 +177,66 @@ sudo mkdir -p /etc/rclone
 sudo rclone config --config /etc/rclone/rclone.conf
 ```
 
-No assistente, escolha **New remote** → nome `b2` → provedor **Backblaze B2** e
-informe o `keyID` e o `applicationKey` da sua conta. O arquivo
-`/etc/rclone/rclone.conf` fica com o formato:
+No assistente:
+
+1. **New remote** → nome `b2` → provedor **Backblaze B2** → informe `keyID` e
+   `applicationKey` da conta (isso gera o acesso ao bucket).
+2. **New remote** de novo → nome `cript` → provedor **Encrypt / Decrypt a remote**.
+   - `remote` → `b2:meu-bucket/assistec` (pasta no bucket).
+   - `password` → escolha "y" para digitar e informe uma **senha forte** (anote!).
+   - `salt` → escolha "y" para digitar e informe um **salt aleatório** (anote!).
+   - Aceite os padrões das demais perguntas.
+
+O `/etc/rclone/rclone.conf` fica com o formato abaixo (valores de exemplo, sem
+segredos reais):
 
 ```
 [b2]
 type = b2
 account = <keyID>
 key = <applicationKey>
+
+[cript]
+type = crypt
+remote = b2:meu-bucket/assistec
+password = <senha-obfuscada-do-crypt>
+password2 = <salt-obfuscado-do-crypt>
 ```
 
-Proteja o arquivo (`sudo chmod 600 /etc/rclone/rclone.conf`) e teste:
+Proteja o arquivo (`sudo chmod 600 /etc/rclone/rclone.conf`) e envie:
 
 ```bash
-RCLONE_DESTINO="b2:meu-bucket/assistec" ./scripts/enviar_backup.sh
+RCLONE_DESTINO="cript:assistec" ./scripts/enviar_backup.sh
 ```
+
+No bucket, os arquivos aparecem com nomes e conteúdo cifrados (não dá para
+reconhecer `banco-*.sql.gz` de fora) — é o esperado.
+
+### 9.2.1 Ciclo de vida no bucket (manter só os últimos 30 dias)
+
+Configure no painel do provedor (ex.: Backblaze B2 → bucket → **Lifecycle
+Settings**) uma regra que **apaga objetos com mais de 30 dias**. O `backup.sh`
+já mantém 14 dias localmente; a cópia fora da VPS fica com 30 dias de histórico.
+Assim o bucket não cresce sem limite e o custo fica previsível.
+
+### 9.2.2 Restaurar a partir do remoto criptografado
+
+O rclone lê o remoto crypt e devolve os arquivos em claro no destino local:
+
+```bash
+mkdir -p /tmp/restore-assistec
+rclone --config /etc/rclone/rclone.conf copy cript:assistec /tmp/restore-assistec
+ls -lh /tmp/restore-assistec
+```
+
+Depois restaure normalmente com os arquivos baixados:
+
+```bash
+./scripts/restaurar.sh /tmp/restore-assistec/banco-....sql.gz /tmp/restore-assistec/media-....tar.gz
+```
+
+Apague a cópia temporária ao terminar (`rm -rf /tmp/restore-assistec`).
+
 
 ### 9.3 Agendar no cron
 
@@ -196,7 +248,7 @@ Adicione (backup diário às 03:00 e envio logo depois; falha vira linha no log)
 
 ```cron
 # Backup diário às 03:00; registra falha em /var/log/assistec-backup.log
-0 3 * * * cd /opt/assistec && ./scripts/backup.sh >> /var/log/assistec-backup.log 2>&1 && RCLONE_DESTINO="b2:meu-bucket/assistec" ./scripts/enviar_backup.sh >> /var/log/assistec-backup.log 2>&1 || echo "$(date -Is) FALHA no backup" >> /var/log/assistec-backup.log
+0 3 * * * cd /opt/assistec && ./scripts/backup.sh >> /var/log/assistec-backup.log 2>&1 && RCLONE_DESTINO="cript:assistec" ./scripts/enviar_backup.sh >> /var/log/assistec-backup.log 2>&1 || echo "$(date -Is) FALHA no backup" >> /var/log/assistec-backup.log
 
 # A cada 5 minutos checa a saúde e registra se estiver fora do ar
 */5 * * * * curl -fsS https://SEU_DOMINIO/api/saude/ >/dev/null || echo "$(date -Is) saude: fora do ar" >> /var/log/assistec-saude.log

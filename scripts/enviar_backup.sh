@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# Envia os backups para fora da VPS com rclone (pensado para Backblaze B2,
-# mas serve para qualquer remoto do rclone). Copia apenas o que ainda não
-# está no destino. Veja em docs/DEPLOY.md como criar o rclone.conf.
+# Envia os backups para fora da VPS com rclone, usando um remoto CRIPTOGRAFADO
+# (crypt) sobre o bucket. Os arquivos saem cifrados: sem a senha e o salt do
+# crypt, o conteúdo no bucket é ilegível. Veja em docs/DEPLOY.md como criar o
+# remoto crypt e onde guardar essas senhas.
 #
 # Uso:
-#   RCLONE_DESTINO="b2:meu-bucket/assistec" ./scripts/enviar_backup.sh
+#   RCLONE_DESTINO="cript:assistec" ./scripts/enviar_backup.sh
 #
 # Variáveis (opcionais):
 #   DIRETORIO_BACKUP  origem local   (padrão: /var/backups/assistec)
@@ -17,7 +18,7 @@ RCLONE_DESTINO="${RCLONE_DESTINO:-}"
 RCLONE_CONFIG="${RCLONE_CONFIG:-/etc/rclone/rclone.conf}"
 
 if [ -z "$RCLONE_DESTINO" ]; then
-  echo "erro: defina RCLONE_DESTINO (ex.: b2:meu-bucket/assistec)" >&2
+  echo "erro: defina RCLONE_DESTINO com o remoto criptografado (ex.: cript:assistec)" >&2
   exit 1
 fi
 if ! command -v rclone >/dev/null 2>&1; then
