@@ -12,14 +12,14 @@
 #   COMPOSE_PROJECT_NAME  nome do projeto compose (padrão: assistec)
 #   POSTGRES_USER         usuário do banco        (padrão: assistec)
 #   POSTGRES_DB           nome do banco           (padrão: assistec)
-#   VOLUME_MEDIA          volume da mídia         (padrão: ${COMPOSE_PROJECT_NAME}_media)
+#   VOLUME_MEDIA          volume da mídia         (padrão: assistec_media; o compose fixa "name: assistec")
 #   IMAGEM_HELPER         imagem para o tar       (padrão: alpine:3)
 set -euo pipefail
 umask 077   # só o dono lê/escreve o que este script criar
 
 DIRETORIO_BACKUP="${DIRETORIO_BACKUP:-/var/backups/assistec}"
 DIAS_RETENCAO="${DIAS_RETENCAO:-14}"
-PROJETO="${COMPOSE_PROJECT_NAME:-assistec}"
+PROJETO="assistec"
 POSTGRES_USER="${POSTGRES_USER:-assistec}"
 POSTGRES_DB="${POSTGRES_DB:-assistec}"
 VOLUME_MEDIA="${VOLUME_MEDIA:-${PROJETO}_media}"

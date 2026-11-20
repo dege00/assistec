@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 import uuid
 from decimal import Decimal
@@ -8,6 +9,9 @@ from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Max
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
+
+from .imagens import reduzir_imagem
 
 
 def gerar_token():
@@ -26,6 +30,15 @@ def caminho_foto(instance, filename):
 
 def caminho_assinatura(instance, filename):
     return f"assinaturas/{timezone.now():%Y/%m}/{uuid.uuid4().hex}.png"
+
+
+def caminho_tema(instance, filename):
+    return f"tema/{uuid.uuid4().hex}{_extensao_segura(filename)}"
+
+
+def caminho_tema_video(instance, filename):
+    extensao = os.path.splitext(filename or "")[1].lower()
+    return f"tema/{uuid.uuid4().hex}{extensao if extensao in {'.mp4', '.webm', '.ogv'} else '.mp4'}"
 
 
 def caminho_logo(instance, filename):
@@ -239,3 +252,167 @@ class Lancamento(PorLoja):
 
     class Meta:
         ordering = ["-data", "-criado_em"]
+
+
+class Tema(models.Model):
+    """Configuração visual global do sistema (singleton)."""
+
+    class Fundo(models.TextChoices):
+        COR = "cor", "Cor"
+        IMAGEM = "imagem", "Imagem"
+        VIDEO = "video", "Vídeo"
+
+    class Vertical(models.TextChoices):
+        TOPO = "topo", "Topo"
+        MEIO = "meio", "Meio"
+        BASE = "base", "Base"
+
+    class Horizontal(models.TextChoices):
+        ESQUERDA = "esquerda", "Esquerda"
+        CENTRO = "centro", "Centro"
+        DIREITA = "direita", "Direita"
+
+    logo = models.ImageField(upload_to=caminho_tema, blank=True, null=True)
+    cor_menu = models.CharField(max_length=7, default="#13201C")
+    cor_destaque = models.CharField(max_length=7, default="#1F6F54")
+    login_fundo_tipo = models.CharField(max_length=10, choices=Fundo.choices, default=Fundo.COR)
+    login_cor = models.CharField(max_length=7, default="#F3F4EF")
+    login_imagem = models.ImageField(upload_to=caminho_tema, blank=True, null=True)
+    login_video = models.FileField(upload_to=caminho_tema_video, blank=True, null=True)
+    caixa_vertical = models.CharField(max_length=10, choices=Vertical.choices, default=Vertical.MEIO)
+    caixa_horizontal = models.CharField(max_length=10, choices=Horizontal.choices, default=Horizontal.CENTRO)
+    caixa_opacidade = models.PositiveSmallIntegerField(default=100)
+
+    _COR_RE = None
+
+    @classmethod
+    def _cor_re(cls):
+        if cls._COR_RE is None:
+            cls._COR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+        return cls._COR_RE
+
+    @classmethod
+    def carregar(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def para_dict(self, request=None):
+        def midia(f):
+            if not f:
+                return ""
+            try:
+                url = f.url
+            except Exception:
+                return ""
+            if isinstance(url, str) and url.startswith("/media/"):
+                return url
+            return ""
+
+        return {
+            "logo": midia(self.logo),
+            "cor_menu": self.cor_menu,
+            "cor_destaque": self.cor_destaque,
+            "login_fundo_tipo": self.login_fundo_tipo,
+            "login_cor": self.login_cor,
+            "login_imagem": midia(self.login_imagem),
+            "login_video": midia(self.login_video),
+            "caixa_vertical": self.caixa_vertical,
+            "caixa_horizontal": self.caixa_horizontal,
+            "caixa_opacidade": self.caixa_opacidade,
+        }
+
+    def aplicar(self, data, files):
+        erros = {}
+        self._arquivos_antigos = []
+        for campo in ("cor_menu", "cor_destaque", "login_cor"):
+            if campo in data:
+                valor = data.get(campo)
+                if not self._cor_re().match(str(valor or "")):
+                    erros[campo] = "Cor inválida."
+                else:
+                    setattr(self, campo, valor)
+
+        if "login_fundo_tipo" in data:
+            v = data.get("login_fundo_tipo")
+            if v in {"cor", "imagem", "video"}:
+                self.login_fundo_tipo = v
+        if "caixa_vertical" in data and data.get("caixa_vertical") in {"topo", "meio", "base"}:
+            self.caixa_vertical = data.get("caixa_vertical")
+        if "caixa_horizontal" in data and data.get("caixa_horizontal") in {"esquerda", "centro", "direita"}:
+            self.caixa_horizontal = data.get("caixa_horizontal")
+        if "caixa_opacidade" in data:
+            try:
+                v = int(data.get("caixa_opacidade"))
+                if 60 <= v <= 100:
+                    self.caixa_opacidade = v
+            except (TypeError, ValueError):
+                pass
+
+        for campo in ("logo", "login_imagem", "login_video"):
+            if str(data.get(f"remover_{campo}", "")).strip() in {"1", "true", "True"}:
+                arq = getattr(self, campo)
+                if arq:
+                    self._arquivos_antigos.append(arq)
+                setattr(self, campo, None)
+
+        limites = {"logo": 2, "login_imagem": 10, "login_video": 10}
+        for campo in ("logo", "login_imagem"):
+            arq = files.get(campo)
+            if not arq:
+                continue
+            if getattr(arq, "size", 0) > limites[campo] * 1024 * 1024:
+                erros[campo] = "Arquivo grande demais."
+                continue
+            try:
+                arq = reduzir_imagem(arq, max_largura=1200 if campo == "logo" else 1920)
+            except ValidationError as exc:
+                detalhe = exc.detail.get("imagem") if isinstance(exc.detail, dict) else None
+                erros[campo] = str(detalhe[0]) if detalhe else "Imagem inválida."
+                continue
+            atual = getattr(self, campo)
+            if atual:
+                self._arquivos_antigos.append(atual)
+            setattr(self, campo, arq)
+
+        video = files.get("login_video")
+        if video:
+            if getattr(video, "size", 0) > limites["login_video"] * 1024 * 1024:
+                erros["login_video"] = "Arquivo grande demais."
+            elif os.path.splitext(video.name or "")[1].lower() not in {".mp4", ".webm", ".ogv"}:
+                erros["login_video"] = "Envie um vídeo MP4, WebM ou OGV."
+            else:
+                atual = self.login_video
+                if atual:
+                    self._arquivos_antigos.append(atual)
+                self.login_video = video
+
+        if self.login_fundo_tipo == "imagem" and not self.login_imagem:
+            erros.setdefault("login_imagem", "Escolha uma imagem para usar como fundo.")
+        if self.login_fundo_tipo == "video" and not self.login_video:
+            erros.setdefault("login_video", "Escolha um vídeo para usar como fundo.")
+        return erros
+
+    def salvar_com_arquivos(self):
+        """Salva antes de apagar os arquivos antigos: um erro nunca deixa o banco apontando para arquivos inexistentes."""
+        self.save()
+        for arq in getattr(self, "_arquivos_antigos", []):
+            try:
+                arq.delete(save=False)
+            except Exception:
+                pass
+        self._arquivos_antigos = []
+
+    def restaurar_padrao(self):
+        self._arquivos_antigos = []
+        for campo in ("logo", "login_imagem", "login_video"):
+            arq = getattr(self, campo)
+            if arq:
+                self._arquivos_antigos.append(arq)
+            setattr(self, campo, None)
+        self.cor_menu = "#13201C"
+        self.cor_destaque = "#1F6F54"
+        self.login_fundo_tipo = "cor"
+        self.login_cor = "#F3F4EF"
+        self.caixa_vertical = "meio"
+        self.caixa_horizontal = "centro"
+        self.caixa_opacidade = 100

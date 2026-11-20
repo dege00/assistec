@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -6,6 +6,11 @@ from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+if "test" not in sys.argv:
+    from .envlocal import carregar_env_local
+    carregar_env_local(BASE_DIR / ".env.local")
+
 DEBUG = os.getenv("DEBUG", "1") == "1"
 SECRET_KEY_PADRAO = "dev-inseguro-troque-em-producao-123"
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -16,13 +21,14 @@ if not SECRET_KEY:
         raise ImproperlyConfigured("Defina SECRET_KEY no ambiente quando DEBUG=0.")
 SECRET_KEYS_INSEGURAS = {SECRET_KEY_PADRAO, "troque-por-uma-string-longa-e-aleatoria"}
 if not DEBUG and (SECRET_KEY in SECRET_KEYS_INSEGURAS or len(SECRET_KEY) < 32):
-    raise ImproperlyConfigured("Defina uma SECRET_KEY longa e aleatória (mínimo 32 caracteres) com DEBUG=0.")
+    raise ImproperlyConfigured("Defina uma SECRET_KEY longa e aleat��ria (m��nimo 32 caracteres) com DEBUG=0.")
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "*" if DEBUG else "").split(",") if h.strip()]
-CSRF_TRUSTED_ORIGINS = [o for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if o]
-# URL pública do frontend (usada no link de acompanhamento enviado por WhatsApp)
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
+
+# URL pǧblica do frontend (usada no link de acompanhamento enviado por WhatsApp)
 FRONTEND_URL = os.getenv("FRONTEND_URL", "").rstrip("/")
 
-# Segurança em produção (proxy HTTPS na frente do Gunicorn/Nginx)
+# Seguran��a em produ��ǜo (proxy HTTPS na frente do Gunicorn/Nginx)
 USE_X_FORWARDED_HOST = not DEBUG
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
@@ -63,7 +69,7 @@ if os.getenv("POSTGRES_DB"):
         "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST", "db"), "PORT": os.getenv("POSTGRES_PORT", "5432"),
     }}
-else:  # desenvolvimento rápido
+else:  # desenvolvimento rǭpido
     DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
 
 AUTH_USER_MODEL = "core.Usuario"
@@ -95,18 +101,19 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 30,
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {
-        "publico": "60/min",   # endpoints públicos (ex.: /api/saude/)
-        "auth": "10/min",      # login (protege contra força bruta de senha)
-        "refresh": "60/min",   # renovação de token (não pode ser tão apertada quanto o login)
+        "publico": "60/min",   # endpoints pǧblicos (ex.: /api/saude/)
+        "auth": "10/min",      # login (protege contra for��a bruta de senha)
+        "refresh": "60/min",   # renova��ǜo de token (nǜo pode ser tǜo apertada quanto o login)
         "senha": "5/min",      # troca de senha
+        "tema": "5/min",       # senha do painel de personaliza��ǜo
     },
-    # Quantos proxies confiáveis existem antes do Django (Caddy + Nginx = 2 em produção).
-    # Sem isso o limite por IP vê sempre o IP do container do Nginx e bloqueia todo mundo junto.
+    # Quantos proxies confiǭveis existem antes do Django (Caddy + Nginx = 2 em produ��ǜo).
+    # Sem isso o limite por IP vǦ sempre o IP do container do Nginx e bloqueia todo mundo junto.
     "NUM_PROXIES": int(os.getenv("NUM_PROXIES", "0")),
 }
-# Access token curto (60 min) limita o dano de um token vazado. A renovação é
-# feita pelo refresh token (14 dias). Sem ROTATE_REFRESH_TOKENS de propósito: a
-# rotação quebraria a renovação única no frontend. Tokens revogados entram na
+# Access token curto (60 min) limita o dano de um token vazado. A renova��ǜo Ǹ
+# feita pelo refresh token (14 dias). Sem ROTATE_REFRESH_TOKENS de prop��sito: a
+# rota��ǜo quebraria a renova��ǜo ǧnica no frontend. Tokens revogados entram na
 # blacklist (rest_framework_simplejwt.token_blacklist); limpe os expirados com
 # "manage.py flushexpiredtokens" (veja o README).
 SIMPLE_JWT = {
@@ -114,5 +121,12 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
 }
 
-if "test" in sys.argv:  # hash de senha rápido só nos testes (a suíte fica bem mais veloz)
+if "test" in sys.argv:  # hash de senha rǭpido s�� nos testes (a su��te fica bem mais veloz)
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# Painel secreto de personaliza��ǜo (logo, cores, tela de login). Hash gerado por
+# "python manage.py gerar_senha_tema". Sem essa variǭvel o painel fica desativado.
+PAINEL_TEMA_SENHA_HASH = os.getenv("PAINEL_TEMA_SENHA_HASH", "")
+
+if (DEBUG and not PAINEL_TEMA_SENHA_HASH and os.environ.get("RUN_MAIN") == "true" and "runserver" in sys.argv):
+    print("[assistec] Painel de tema desativado: rode `python manage.py gerar_senha_tema --gravar-env` e reinicie o servidor.", file=sys.stderr)

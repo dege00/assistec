@@ -13,12 +13,12 @@
 #   POSTGRES_USER         usuário do banco        (padrão: assistec)
 #   POSTGRES_DB           banco de produção       (padrão: assistec)
 #   BANCO_TESTE           banco de teste          (padrão: assistec_restore)
-#   VOLUME_MEDIA          volume de produção      (padrão: ${COMPOSE_PROJECT_NAME}_media)
-#   VOLUME_MEDIA_TESTE    volume de teste         (padrão: ${COMPOSE_PROJECT_NAME}_media_restore)
+#   VOLUME_MEDIA          volume de produção      (padrão: assistec_media; o compose fixa "name: assistec")
+#   VOLUME_MEDIA_TESTE    volume de teste         (padrão: assistec_media_restore)
 #   IMAGEM_HELPER         imagem para o tar       (padrão: alpine:3)
 set -euo pipefail
 
-PROJETO="${COMPOSE_PROJECT_NAME:-assistec}"
+PROJETO="assistec"
 POSTGRES_USER="${POSTGRES_USER:-assistec}"
 BANCO_PRODUCAO="${POSTGRES_DB:-assistec}"
 VOLUME_MEDIA_PRODUCAO="${VOLUME_MEDIA:-${PROJETO}_media}"
@@ -73,6 +73,9 @@ docker compose exec -T db psql -U "$POSTGRES_USER" -d postgres -q -c \
 docker compose exec -T db dropdb -U "$POSTGRES_USER" --if-exists "$ALVO_BANCO"
 docker compose exec -T db createdb -U "$POSTGRES_USER" "$ALVO_BANCO"
 gunzip -c "$ARQUIVO_BANCO" | docker compose exec -T db psql -U "$POSTGRES_USER" -d "$ALVO_BANCO" -q -v ON_ERROR_STOP=1 --single-transaction
+
+echo "[restore] $(date -Is) validando arquivo de mídia '$ARQUIVO_MEDIA'"
+tar tzf "$ARQUIVO_MEDIA" >/dev/null
 
 echo "[restore] $(date -Is) restaurando mídia no volume '$ALVO_MEDIA'"
 DIR_MEDIA="$(cd "$(dirname "$ARQUIVO_MEDIA")" && pwd)"

@@ -113,7 +113,11 @@ ALLOWED_HOSTS=SEU_DOMINIO
 CSRF_TRUSTED_ORIGINS=https://SEU_DOMINIO
 FRONTEND_URL=https://SEU_DOMINIO
 POSTGRES_PASSWORD=<senha forte do banco>
+PAINEL_TEMA_SENHA_HASH=<opcional: gere com "docker compose exec backend python manage.py gerar_senha_tema">
 ```
+
+Se o Painel Secreto for usado, gere o hash depois do primeiro `docker compose up -d --build`, cole no `.env` e rode
+`docker compose up -d --force-recreate backend`. Sem a variável, o painel fica desativado (é o padrão seguro).
 
 Proteja o arquivo: `chmod 600 .env`.
 
@@ -284,7 +288,8 @@ restaure em um banco e volume de **teste** (não toca em produção):
 ```bash
 cd /opt/assistec
 ./scripts/backup.sh
-./scripts/restaurar.sh /var/backups/assistec/banco-*.sql.gz /var/backups/assistec/media-*.tar.gz
+# use os dois nomes exatos impressos pelo backup (o mesmo timestamp), não curingas:
+./scripts/restaurar.sh /var/backups/assistec/banco-2026-01-01-120000.sql.gz /var/backups/assistec/media-2026-01-01-120000.tar.gz
 ```
 
 O script imprime as contagens (lojas, clientes, peças, ordens, fotos) do banco
