@@ -25,10 +25,13 @@ async function carregar() {
 }
 onMounted(carregar)
 
+let urlLogo = ''
 function escolherLogo(e) {
   const file = e.target.files[0]
   arquivoLogo.value = file || null
-  if (file) logoAtual.value = URL.createObjectURL(file)
+  if (urlLogo) URL.revokeObjectURL(urlLogo)
+  urlLogo = file ? URL.createObjectURL(file) : ''
+  if (urlLogo) logoAtual.value = urlLogo
 }
 
 async function salvar() {
@@ -40,6 +43,8 @@ async function salvar() {
     const u = await api('/auth/eu/', { method: 'PATCH', form })
     setSession({ usuario: u })
     logoAtual.value = u.loja?.logo || logoAtual.value
+    if (urlLogo) URL.revokeObjectURL(urlLogo)
+    urlLogo = ''
     arquivoLogo.value = null
     msg.value = 'Dados da assistência salvos.'
   } catch (e) { erro.value = e.message } finally { salvando.value = false }

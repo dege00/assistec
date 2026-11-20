@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { auth } from './api'
 import './style.css'
+import { iniciarTema } from './composables/useTema'
 
 const routes = [
   { path: '/login', component: () => import('./views/Login.vue'), meta: { publico: true } },
@@ -25,4 +26,5 @@ router.beforeEach((to) => {
   if (!auth.access) return '/login'
   if (to.meta.admin && auth.user?.cargo !== 'admin') return '/'
 })
+iniciarTema()   // aplica o tema salvo (cache) já na primeira pintura e atualiza pelo servidor
 createApp(App).use(router).mount('#app')

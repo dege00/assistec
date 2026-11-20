@@ -14,7 +14,12 @@ async function carregar() {
 }
 onMounted(carregar); watch([de, ate], carregar)
 async function salvar() { erro.value = ''; try { await api('/lancamentos/', { method: 'POST', body: f }); f.descricao = ''; f.valor = ''; carregar() } catch (e) { erro.value = e.message } }
-async function remover(id) { if (confirm('Excluir lançamento?')) { await api(`/lancamentos/${id}/`, { method: 'DELETE' }); carregar() } }
+async function remover(id) {
+  if (!confirm('Excluir lançamento?')) return
+  erro.value = ''
+  try { await api(`/lancamentos/${id}/`, { method: 'DELETE' }); carregar() }
+  catch (e) { erro.value = e.message }
+}
 </script>
 <template>
   <h1>Financeiro</h1>

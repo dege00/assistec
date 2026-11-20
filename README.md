@@ -1,4 +1,4 @@
-# Assistec — base de sistema para assistência técnica
+﻿# Assistec — base de sistema para assistência técnica
 
 Stack: **Django + DRF + PostgreSQL** (API) · **Vue 3 + Vite** (PWA instalável no celular).
 
@@ -57,7 +57,9 @@ O compose sobe PostgreSQL (com healthcheck), API (Gunicorn), frontend (Nginx) e 
 automaticamente para o `DOMINIO` do `.env` (o DNS precisa apontar para a VPS; câmera e PWA exigem HTTPS).
 Sem `DOMINIO`, sobe em `https://localhost` com certificado local, só para testar.
 O container da API roda sempre com `DEBUG=0`, mesmo que o `.env` esqueça a variável; com isso o boot falha se a
-`SECRET_KEY` for a padrão ou tiver menos de 32 caracteres.
+`SECRET_KEY` for a padrão ou tiver menos de 32 caracteres. Use `https://` em `CSRF_TRUSTED_ORIGINS` e `FRONTEND_URL`:
+o Caddy publica HTTPS, e origins em `http://` fazem o CSRF falhar e os links do WhatsApp apontarem para o endereço errado.
+
 O compose define `NUM_PROXIES=2` na API: como o tráfego passa pelo Caddy e pelo Nginx antes do Django, esse valor
 faz o limite de tentativas de login usar o **IP real do cliente** em vez do IP do container do Nginx (sem ele, um
 único atacante bloquearia o login de todos). Em desenvolvimento o padrão é `0`, pois não há proxy na frente.
@@ -77,6 +79,15 @@ Scripts em `scripts/` (rode na raiz do projeto, onde está o `docker-compose.yml
 Endpoint público `GET /api/saude/` (só checa o banco e responde `{"status": "ok"}`) para o UptimeRobot.
 O agendamento no cron e a criação do `rclone.conf` estão em [docs/DEPLOY.md](docs/DEPLOY.md).
 
+
+## Personalização do sistema (painel secreto)
+
+O sistema tem um painel secreto para personalizar logo, cores e tela de login (aberto por três cliques rápidos na logo).
+
+- Gere o hash da senha com `python manage.py gerar_senha_tema` (a senha precisa atender aos validadores do Django). Defina `PAINEL_TEMA_SENHA_HASH` no ambiente com o valor gerado; sem essa variável o painel fica desativado. Trocar o hash invalida imediatamente os tokens já emitidos.
+
+- Docker (VPS/produção): gere com `docker compose exec backend python manage.py gerar_senha_tema`, cole `PAINEL_TEMA_SENHA_HASH=...` no `.env` da raiz (usado pelo compose) e reinicie o backend. O `.env` da raiz não é lido automaticamente pelo `runserver` em desenvolvimento.
+- Sem Docker: `python manage.py gerar_senha_tema --gravar-env` grava a linha em `backend/.env.local` (arquivo só de desenvolvimento, fora do git), e depois `python manage.py migrate` e reinicie o `runserver`. O `runserver` não lê o `.env` da raiz.
 ## Como criar o acesso de um cliente
 Não existe cadastro público: quem cria a loja e o usuário é você, pelo backend. Use o comando `criar_loja`
 (rodando no servidor ou dentro do container):
